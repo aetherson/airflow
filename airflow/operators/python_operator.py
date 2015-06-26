@@ -1,7 +1,8 @@
 import logging
 
-from airflow.models import BaseOperator
-from airflow.utils import apply_defaults
+from airflow.models import BaseOperator, TaskInstance
+from airflow.utils import apply_defaults, State
+from airflow import settings
 
 
 class PythonOperator(BaseOperator):
@@ -47,3 +48,18 @@ class PythonOperator(BaseOperator):
 
         return_value = self.python_callable(*self.op_args, **self.op_kwargs)
         logging.info("Done. Returned value was: " + str(return_value))
+        return return_value
+
+
+class BranchPythonOperator(PythonOperator):
+    def execute(self, context):
+        branch = super(self, PythonOperator).__init__()
+        session = settings.Session()
+        for task in context['task'].downstream_list:
+            if task.task_id != branch:
+                ti = TaskInstance(
+                    task, execution_date=context['ti'].execution_date)
+                ti.state = State.FAILED
+                session.merge(ti)
+        session.commit()
+        session.close()
